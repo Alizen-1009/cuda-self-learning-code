@@ -1,0 +1,21 @@
+[submodule "repos/CUDA_Kernel_Samples"]
+	path = repos/CUDA_Kernel_Samples
+	url = git@github.com:Tongkaio/CUDA_Kernel_Samples.git
+[submodule "repos/Cuda-Tutorials"]
+	path = repos/Cuda-Tutorials
+	url = git@github.com:hengshan/Cuda-Tutorials.git
+[submodule "repos/LeetCUDA"]
+	path = repos/LeetCUDA
+	url = git@github.com:xlite-dev/LeetCUDA.git
+[submodule "repos/LeetGPU"]
+	path = repos/LeetGPU
+	url = git@github.com:MostHumble/LeetGPU.git
+[submodule "repos/accelerated-computing-hub"]
+	path = repos/accelerated-computing-hub
+	url = git@github.com:NVIDIA/accelerated-computing-hub.git
+[submodule "repos/how-to-optim-algorithm-in-cuda"]
+	path = repos/how-to-optim-algorithm-in-cuda
+	url = git@github.com:BBuf/how-to-optim-algorithm-in-cuda.git
+[submodule "repos/interview_code"]
+	path = repos/interview_code
+	url = git@github.com:Alizen-1009/interview_code.git
