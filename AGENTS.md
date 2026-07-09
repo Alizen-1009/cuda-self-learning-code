@@ -1,4 +1,4 @@
-# CLAUDE.md — CUDA / Tensor Core 学习工作区
+# AGENTS.md — CUDA / Tensor Core 学习工作区
 
 这是一个用 `/teach` 技能驱动的**长期学习工作区**。每次会话开始，先读下面的指针进入状态。
 
