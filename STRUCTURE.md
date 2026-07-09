@@ -7,6 +7,7 @@
 
 ```
 self-learing/
+├── README.md                  # 项目首页：简介、快速开始、学习主线
 ├── CLAUDE.md                 # 你最初写给我的需求（原始记录）
 ├── MISSION.md                # 🎯 学习使命：为什么学 / 成功标准 / 边界
 ├── NOTES.md                  # 教学偏好 & 待确认项
