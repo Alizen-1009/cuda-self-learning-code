@@ -14,5 +14,5 @@
 
 ## 待确认 / 后续可深挖
 - 真实项目具体是哪个框架（vLLM / SGLang / TRT-LLM / 自研）——下次可问，用来选更精准的参考 kernel。
-- 是否需要把 Triton 作为并列主力（目前定位：作为对照透镜 + 快速 baseline，穿插在各阶段）。
+- 两条对照透镜（Triton / TIRx）的相对权重：目前均定位为对照透镜（Triton 偏快速 baseline，TIRx 偏 Blackwell 概念/图解），非主线实操；是否要给某一条更多篇幅，待用户偏好确认。
 - 精度重点顺序：FP16/BF16 打底 → FP8 → Blackwell FP4/MXFP（MoE 量化会重度用到）。

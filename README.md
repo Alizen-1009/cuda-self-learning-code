@@ -44,7 +44,7 @@ open reference/glossary.html
 | `lessons/` | 编号课程，当前以静态 HTML 为主 |
 | `reference/` | 常读常新的参考材料，例如术语表 |
 | `assets/` | 课程和参考页共享样式 |
-| `repos/` | 7 个参考仓库，以 Git submodule 方式链接 |
+| `repos/` | 8 个参考仓库，以 Git submodule 方式链接 |
 
 ## 学习主线
 
@@ -55,13 +55,14 @@ open reference/glossary.html
 5. Blackwell：`tcgen05` / TMMA、TMEM、FP8 / FP4 block-scaled MMA。
 6. MoE 计算侧毕业作品：grouped / segmented GEMM、permute / unpermute、W4A16 / W8A8 / FP8 量化 GEMM。
 
-Triton 作为对照透镜穿插使用，用来快速建立 baseline 和反推 CUDA / CUTLASS 设计。
+Triton 与 TIRx 作为两条对照透镜穿插使用，用来快速建立 baseline、从 IR/DSL 视角三角验证并反推 CUDA / CUTLASS 设计。
 
 ## 参考子模块
 
 | 子模块 | 用途 |
 |---|---|
 | `repos/how-to-optim-algorithm-in-cuda` | 中文体系化 CUDA / CUTLASS / MoE 笔记，是当前知识主脊 |
+| `repos/modern-gpu-programming-for-mlsys` | MLC/CMU 书，Blackwell 心智模型 + 高质量图解（TIRx DSL，第二对照透镜；英文为准） |
 | `repos/LeetCUDA` | 可读可改的实战 kernel，覆盖 HGEMM、FlashAttention、swizzle、Triton 等 |
 | `repos/accelerated-computing-hub` | NVIDIA 官方教程，用作权威对照 |
 | `repos/CUDA_Kernel_Samples` | 干净的逐步优化样例，适合打 GEMM / reduce / transpose 基础 |

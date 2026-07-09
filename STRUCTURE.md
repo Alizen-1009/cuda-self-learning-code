@@ -21,7 +21,7 @@ self-learing/
 │   └── 0001-cuda-core-to-tensor-core.html
 ├── assets/                   # 各课共享组件
 │   └── style.css             # 统一样式表
-└── repos/                    # 📦 你 clone 的 7 个参考仓库（见下）
+└── repos/                    # 📦 你 clone 的 8 个参考仓库（见下）
 ```
 
 ### 教学工作区各部分的分工
@@ -39,7 +39,7 @@ self-learing/
 
 ## `repos/` — 参考仓库
 
-7 个仓库，约 1.2 GB。按用途分三类：**知识主脊**、**动手素材**、**练习题库**。
+8 个仓库。按用途分三类：**知识主脊**、**动手素材**、**练习题库**。
 
 ### 🌟 知识主脊
 
@@ -52,6 +52,16 @@ repos/how-to-optim-algorithm-in-cuda/     # 成体系中文笔记，最贴合 Mo
 ├── cuda-kernels/     # 各类算子实现
 ├── triton/           # Triton 相关
 ├── papers/  ml-engineering/  pytorch/  tools/  deprecated/
+```
+
+```
+repos/modern-gpu-programming-for-mlsys/    # MLC/CMU 书：Blackwell 心智模型 + 图解（TIRx DSL，概念透镜）
+├── chapter_tensor_cores/ chapter_tmem/ chapter_tma/ chapter_async_barriers/ chapter_clc/  ← 阶段3-4 Blackwell 核心
+├── chapter_data_layout/ chapter_layout_generations/ chapter_performance/   ← 阶段0/2 布局·swizzle·roofline
+├── chapter_gemm_{basics,async,advanced}/  chapter_flash_attention/         ← 阶段3-5 SOTA GEMM/Attn 结构参照
+├── img/              # tcgen05_ldst / tmem_grid / mma_cg*/ mma_block_scaled … 高质量 SVG（课上直接引用）
+├── chapter_intro_tirx/ chapter_tirx_layout_api/ tirx_guide/   # TIRx 语言（第二对照透镜，非 PTX/CUTLASS）
+└── zh/              # 中文版（目前多为 TODO 占位，以英文为准）
 ```
 
 ```
@@ -87,10 +97,10 @@ repos/interview_code/     # 面试题：cuda / quant / cpp / python / cf
 
 | 阶段 | 主要用到的仓库路径 |
 |---|---|
-| 0 性能心智模型 | `cuda-mode/lectures`(L8/L1) · `CUDA_Kernel_Samples/reduce` |
+| 0 性能心智模型 | `cuda-mode/lectures`(L8/L1) · `CUDA_Kernel_Samples/reduce` · `modern-gpu-.../chapter_performance`(roofline/overlap) |
 | **1 Tensor Core 入门** | `cutlass/instructions`(ldmatrix) · `LeetCUDA/kernels/hgemm`(wmma) · `ptx-isa` |
-| 2 GEMM + CuTe | `cutlass/cute` · `CUDA_Kernel_Samples/sgemm` · `LeetCUDA/kernels/{sgemm,swizzle}` |
-| 3 Hopper | `cutlass/{wgmma,tma}` · `LeetCUDA/kernels/ws-hgemm` |
-| 4 Blackwell | `ptx-isa` · CUTLASS Blackwell 示例（外部） |
-| 5 MoE 毕业作品 | `large-language-model/moe` · `cutlass/gemm`(量化 GEMM) |
-| Triton 穿插 | `cuda-mode/lectures`(L14/L29) · `LeetCUDA/kernels/openai-triton` · `repos/.../triton` |
+| 2 GEMM + CuTe | `cutlass/cute` · `CUDA_Kernel_Samples/sgemm` · `LeetCUDA/kernels/{sgemm,swizzle}` · `modern-gpu-.../chapter_data_layout`(swizzle) |
+| 3 Hopper | `cutlass/{wgmma,tma}` · `LeetCUDA/kernels/ws-hgemm` · `modern-gpu-.../chapter_{tma,async_barriers,gemm_async,gemm_advanced}` |
+| 4 Blackwell | `ptx-isa` · CUTLASS Blackwell 示例（外部） · `modern-gpu-.../chapter_{tensor_cores,tmem,clc}`+`img/`(心智模型+图解) |
+| 5 MoE 毕业作品 | `large-language-model/moe` · `cutlass/gemm`(量化 GEMM) · `modern-gpu-.../chapter_flash_attention`(FA4 结构) |
+| Triton / TIRx 对照透镜 | `cuda-mode/lectures`(L14/L29) · `LeetCUDA/kernels/openai-triton` · `modern-gpu-.../chapter_intro_tirx`+`tirx_guide`(TIRx DSL) |

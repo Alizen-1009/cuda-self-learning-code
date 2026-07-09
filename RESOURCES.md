@@ -4,6 +4,14 @@
 
 ## Knowledge — 本地仓库（已 clone）
 
+- **repos/modern-gpu-programming-for-mlsys/** — MLC-AI / CMU MLSys 课程配套书《Modern GPU Programming for MLSys》，**Blackwell 知识主脊 + 概念/图解来源**。
+  - 定位：以 **Blackwell 为第一目标**讲现代 GPU（硬件心智模型 → 编程模型 → SOTA kernel）。恰好补上原先标注的 Blackwell 空缺。
+  - `chapter_tensor_cores/`(`tcgen05`)、`chapter_tmem/`(TMEM 二维地址/alloc/tcgen05.ld-st)、`chapter_tma/`、`chapter_async_barriers/`(mbarrier)、`chapter_clc/`(cluster launch control)：Use for — **阶段 3~4** Hopper/Blackwell 异步引擎与 tensor core 的清晰心智模型 + 权威图解。
+  - `img/`(tcgen05_ldst.svg / tmem_grid / mma_cg1_m128 / mma_cg2_m256 / mma_block_scaled.svg / sf_scale_vec / smem_descriptor / swizzle_conflict)：Use for — 每课直接引用的高质量示意图（block-scaled FP4/FP8、TMEM 布局、MMA shape）。
+  - `chapter_data_layout/`、`chapter_layout_generations/`、`chapter_performance/`(roofline/overlap)：Use for — **阶段 0/2** 数据布局、swizzle、性能心智。
+  - `chapter_gemm_{basics,async,advanced}/`(TMA pipelining → persistent → warp specialization → 2-CTA cluster)、`chapter_flash_attention/`(Flash Attention 4)：Use for — 阶段 3~5 SOTA GEMM/Attention 的**结构与调度**参照。
+  - ⚠️ 用它的方式：全书以 **TIRx**（TVM 系 Python IR-level DSL）写 kernel，**不是裸 CUDA/PTX/CUTLASS**。它是**概念透镜 + Blackwell 图解/结构参照**，深度终点（PTX `mma`/`wgmma`/`tcgen05` 逐字段）仍走 PTX ISA + CUTLASS。把 **TIRx 当作第二条对照透镜**（与 Triton 并列，见 [MISSION](./MISSION.md)）。
+  - ⚠️ `zh/` 中文版目前多为 TODO 占位，**以英文正文为准**（英文约 5.4k 行）。在线版：<https://mlc.ai/modern-gpu-programming-for-mlsys/>。
 - **repos/how-to-optim-algorithm-in-cuda/** — 本课程的**知识主脊**。
   - `cutlass/cute/` (杨远航、reed 的 CuTe 笔记)：Use for — Layout 代数、TiledMMA/Copy 抽象入门。
   - `cutlass/instructions/cuda的ldmatrix指令的详细解释.md`：Use for — Lesson 1~2，理解 fragment 加载。
@@ -35,5 +43,5 @@
 - CUTLASS GitHub Issues/Discussions — Use for — Blackwell tcgen05 等新特性的一手答疑。
 
 ## Gaps（待补）
-- Blackwell `tcgen05`/TMEM/FP4 的成体系中文教程尚少；本地仓库覆盖薄，需靠 PTX ISA + CUTLASS Blackwell 示例 + Colfax 新文补齐。
+- ~~Blackwell `tcgen05`/TMEM/FP4 覆盖薄~~ → 已由 `modern-gpu-programming-for-mlsys`（概念/图解层）大幅补上；**仍缺 PTX/CUTLASS 层的裸指令实操**（该书是 TIRx DSL），此层继续靠 PTX ISA + CUTLASS Blackwell 示例 + Colfax 新文。
 - 真实项目所用框架未定，暂无法锁定最贴合的参考 kernel（见 NOTES.md 待确认）。

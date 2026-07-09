@@ -19,3 +19,6 @@
 [submodule "repos/interview_code"]
 	path = repos/interview_code
 	url = git@github.com:Alizen-1009/interview_code.git
+[submodule "repos/modern-gpu-programming-for-mlsys"]
+	path = repos/modern-gpu-programming-for-mlsys
+	url = git@github.com:mlc-ai/modern-gpu-programming-for-mlsys.git

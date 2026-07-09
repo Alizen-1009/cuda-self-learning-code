@@ -19,7 +19,7 @@
 - `learning-records/` 学习记录（算 ZPD，决定下一步教什么）
 - `reference/` 参考文档（`glossary.html` 术语表——每课遵循）
 - `lessons/` 课程（编号递增 HTML）· `assets/` 共享样式/组件
-- `repos/` 你 clone 的 7 个参考仓库
+- `repos/` 你 clone 的 8 个参考仓库（含 `modern-gpu-programming-for-mlsys`：MLC/CMU 书，Blackwell 心智模型+图解，TIRx DSL 作第二对照透镜）
 
 ## 教学约定
 - 每节课只锁定**一个 tangible win**，短、可快速完成，落脚在"你现在能看懂/质疑 Agent 说的 X"。
@@ -29,11 +29,12 @@
 - 新术语先进 `glossary.html`；有非平凡的掌握/纠误/目标变化就写 `learning-records/`。
 
 ## 学习路径（阶段）
-0 性能心智模型 → **1 `mma.sync`+ldmatrix**（当前，4060ti）→ 2 GEMM+CuTe → 3 Hopper(wgmma+TMA) → 4 Blackwell(tcgen05+TMEM+FP4) → 5 MoE 毕业作品。Triton 作对照透镜穿插。
+0 性能心智模型 → **1 `mma.sync`+ldmatrix**（当前，4060ti）→ 2 GEMM+CuTe → 3 Hopper(wgmma+TMA) → 4 Blackwell(tcgen05+TMEM+FP4) → 5 MoE 毕业作品。**Triton + TIRx 作两条对照透镜穿插**（TIRx 见 MLC 书）。阶段 3~4 的 Blackwell 心智模型与图解主要来自 `repos/modern-gpu-programming-for-mlsys`。
 
 ## 进度
 - ✅ 初始访谈完成，mission/路径确立（`learning-records/0001`）
 - ✅ 第 1 课：从 CUDA Core 到 Tensor Core（`lessons/0001`）
+- ✅ 新增知识源：`modern-gpu-programming-for-mlsys`（Blackwell 主脊 + TIRx 透镜，`learning-records/0002`）
 - ⏭ 下一课：手写 `mma.sync` + `ldmatrix`（拆开 wmma，图解 fragment 映射）
 
 ## 待确认（见 NOTES.md）
