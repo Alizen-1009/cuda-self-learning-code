@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 1 课 · 从 CUDA Core 到 Tensor Core</title>
+<link rel="stylesheet" href="../assets/style.css">
+<style>
+  .decode { font-size: .88rem; }
+  .decode td:first-child { font-family: var(--font-mono); color: var(--accent); white-space: nowrap; }
+  .frag-table td:first-child { font-family: var(--font-mono); font-weight: 700; }
+  .big-ptx { font-size: .92rem; }
+</style>
+</head>
+<body>
+
+<p class="eyebrow">Lesson 01 · Tensor Core 入门 <span class="tag ada">在 4060ti 上可跑</span></p>
+<h1>从 CUDA Core 到 Tensor Core</h1>
+<p class="subtitle">一条 <code>mma.sync</code> 指令到底做了什么——以及为什么它感觉像黑盒。</p>
+
+<div class="note">
+  <span class="callout-title">这节课的唯一目标 (tangible win)</span>
+  读完后，你能拿起任何一条 <code>mma.sync</code> 的 PTX，<strong>逐字段说出它的含义</strong>，并解释为什么"没有任何一个线程持有一整行数据"。这是 <code>wgmma</code>(Hopper)、<code>tcgen05</code>/TMMA(Blackwell) 和整个 CUTLASS 的共同地基——搞懂这一条，后面所有 tensor core 的黑盒都会开始透明。
+</div>
+
+<h2>1. 心智跃迁：从"标量 FMA"到"一条指令一个矩阵"</h2>
+<p>
+你写 CUDA core kernel 时的世界观是：<strong>一个线程</strong>执行一次 <code>fma</code>（<code>c += a*b</code>），32 个线程凑成一个 warp 并行地各算各的。矩阵乘就是每个线程负责输出矩阵的若干个元素，自己拉一条 K 维内积。
+</p>
+<p>
+Tensor Core 把这个世界观<strong>整个换掉</strong>。它不是"更快的标量单元"，而是一个<strong>矩阵单元</strong>：一条指令直接算完一整块小矩阵的乘累加
+</p>
+<pre><code>D = A · B + C</code></pre>
+<p>
+其中 A、B、C、D 是<em>小矩阵</em>而不是标量。代价是：这条指令<strong>不属于单个线程</strong>，而是<strong>整个 warp（32 线程）协作发起的一条指令</strong>。这正是它让人困惑的根源——它长得像一条普通 PTX，语义却是集体行为。<sup class="ref">[1]</sup>
+</p>
+
+<h2>2. 解剖一条真实的 <code>mma.sync</code></h2>
+<p>这是 Ada/Ampere 上最常见的一条 FP16 tensor core 指令（你 4060ti 上就能跑）：</p>
+<pre class="big-ptx"><code><span class="key">mma.sync.aligned</span>.m16n8k16.row.col.f32.f16.f16.f32
+    {d0,d1,d2,d3}, {a0,a1,a2,a3}, {b0,b1}, {c0,c1,c2,c3};</code></pre>
+
+<table class="decode">
+  <tr><th>字段</th><th>含义</th></tr>
+  <tr><td>mma.sync</td><td>warp 级<strong>同步</strong>矩阵乘累加。<code>sync</code> = 整个 warp 必须一起执行、执行完隐式同步。</td></tr>
+  <tr><td>.aligned</td><td>保证 warp 内 32 线程全部活跃且对齐参与（否则行为未定义）。</td></tr>
+  <tr><td>.m16n8k16</td><td>本条指令算的 tile 形状：<code>M=16, N=8, K=16</code>。即 A 是 16×16、B 是 16×8、C/D 是 16×8。</td></tr>
+  <tr><td>.row.col</td><td>A 按 row-major、B 按 col-major 解读（决定 fragment 摆放）。</td></tr>
+  <tr><td>.f32.f16.f16.f32</td><td>依次是 <strong>D、A、B、C</strong> 的数据类型：输入 A/B 是 f16，累加 C/D 是 f32（混合精度）。</td></tr>
+  <tr><td>{d0..d3} 等</td><td>操作数是<strong>寄存器列表</strong>——每个线程贡献自己那几份 fragment，不是内存地址。</td></tr>
+</table>
+
+<div class="win">
+  <span class="callout-title">读法口诀</span>
+  <code>mma.sync</code> 后面永远是三段：<strong>形状</strong>(mXnYkZ) → <strong>布局</strong>(row/col) → <strong>类型</strong>(D/A/B/C 四个)。看到任何 mma 指令，按这三段拆，一定拆得开。
+</div>
+
+<h2>3. 关键洞察：fragment 分散在 32 个线程的寄存器里</h2>
+<p>
+这就是"黑盒感"的核心。这条 <code>m16n8k16</code> 指令要处理的数据量是：
+</p>
+<table class="frag-table">
+  <tr><th>矩阵</th><th>总元素</th><th>÷ 32 线程</th><th>每线程寄存器</th></tr>
+  <tr><td>A</td><td>16×16 = 256 个 f16</td><td>8 个 f16</td><td><code>{a0,a1,a2,a3}</code> = 4×b32</td></tr>
+  <tr><td>B</td><td>16×8 = 128 个 f16</td><td>4 个 f16</td><td><code>{b0,b1}</code> = 2×b32</td></tr>
+  <tr><td>C/D</td><td>16×8 = 128 个 f32</td><td>4 个 f32</td><td><code>{c0..c3}</code> = 4×b32</td></tr>
+</table>
+<p>
+所以：<strong>没有任何一个线程持有一整行或一整列</strong>。矩阵被硬件规定的、非直觉的方式"打碎"分布到 32 个线程的寄存器中。你不能自己随便摆——硬件只认这一种 fragment 布局。<sup class="ref">[2]</sup>
+</p>
+
+<h2>4. 于是 <code>ldmatrix</code> 出现了</h2>
+<p>
+既然 fragment 布局是硬件钦定且反直觉的，那么"把数据从 shared memory 搬进寄存器并<em>恰好摆成</em>这个布局"就是个麻烦活。<code>ldmatrix</code> 这条 PTX 指令专门干这件事：一个 warp 协作地从 SMEM 装载一块矩阵，直接落成 <code>mma</code> 要的 fragment 排列。
+</p>
+<p>
+记住这条<strong>数据流水线主干</strong>，后面每一代架构都是它的升级版：
+</p>
+<pre><code>Global ──<span class="cmt">cp.async</span>──▶ Shared ──<span class="cmt">ldmatrix</span>──▶ Register ──<span class="cmt">mma.sync</span>──▶ 累加
+                                          (fragment 布局)</code></pre>
+<p class="cite">
+Hopper 把 <code>cp.async</code> 升级成 <strong>TMA</strong>、<code>mma.sync</code> 升级成 <strong>wgmma</strong>（操作数可直接来自 SMEM，省掉 ldmatrix 一步）；Blackwell 再升级成 <strong>tcgen05</strong> + TMEM。骨架不变——所以这一课的心智模型能一路复用。
+</p>
+
+<hr>
+
+<h2>检验：三道即时回忆题</h2>
+<p class="cite">凭记忆作答，不要往上翻。答错会立刻告诉你为什么。</p>
+
+<div class="quiz" id="q1">
+  <p class="q">Q1. 一条 <code>mma.sync</code> 指令是由谁执行的？</p>
+  <div class="opts">
+    <button class="opt" data-c="0">由单个线程独立完成运算</button>
+    <button class="opt" data-c="1">由一个线程束协同完成</button>
+    <button class="opt" data-c="0">由一个线程块协同完成</button>
+    <button class="opt" data-c="0">由四个线程束一起完成</button>
+  </div>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" id="q2">
+  <p class="q">Q2. 执行 <code>m16n8k16</code> 时，输入矩阵 A 的数据存放在哪里？</p>
+  <div class="opts">
+    <button class="opt" data-c="0">存放在共享内存当中</button>
+    <button class="opt" data-c="1">分散在线程寄存器中</button>
+    <button class="opt" data-c="0">存放在全局内存当中</button>
+    <button class="opt" data-c="0">存放在张量内存当中</button>
+  </div>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" id="q3">
+  <p class="q">Q3. 为什么需要 <code>ldmatrix</code> 这条指令？</p>
+  <div class="opts">
+    <button class="opt" data-c="0">为了把数据写回全局显存</button>
+    <button class="opt" data-c="1">为了摆成硬件要的布局</button>
+    <button class="opt" data-c="0">为了在线程间广播标量</button>
+    <button class="opt" data-c="0">为了消除共享内存冲突</button>
+  </div>
+  <div class="fb"></div>
+</div>
+
+<div class="quiz" id="q4">
+  <p class="q">Q4. <code>mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32</code> 里最后四个类型字段的顺序是？</p>
+  <div class="opts">
+    <button class="opt" data-c="0">依次表示 A、B、C、D 类型</button>
+    <button class="opt" data-c="1">依次表示 D、A、B、C 类型</button>
+    <button class="opt" data-c="0">依次表示 C、D、A、B 类型</button>
+    <button class="opt" data-c="0">依次表示 A、C、B、D 类型</button>
+  </div>
+  <div class="fb"></div>
+</div>
+
+<h2>动手（可选，30 分钟）</h2>
+<p>
+在你本地 4060ti 上，用 CUDA C++ 的 <code>nvcuda::wmma</code> API 写一个 16×16×16 的 HGEMM，跑通并和 CPU 结果对拍。<code>wmma</code> 帮你隐藏了 fragment 布局——先感受"一条指令算一块矩阵"。下节课我们会把它<strong>拆开</strong>，换成手写 <code>mma.sync</code>，你就会真正看见这节课讲的 fragment 分布。参考：<code>repos/LeetCUDA/kernels/hgemm/</code> 里的 wmma 版本。
+</p>
+
+<div class="ask-teacher">
+  <span class="callout-title">我是你的老师 — 随时追问</span>
+  卡在哪一步都可以问我：想看 32 个线程到底哪个线程持有 A 的哪几个元素（完整 thread-fragment 映射图）？想让我把这条 PTX 编译出来看 SASS？想直接跳到 Hopper 的 wgmma 对比？直接说。
+</div>
+
+<h3>主源推荐（本课最高质量的一份）</h3>
+<p>
+<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-instructions-mma">NVIDIA PTX ISA — Warp-level Matrix Instructions (mma)</a>：所有 <code>mma</code> 形状、类型、fragment 线程映射的<strong>唯一权威</strong>。本地对照读 <code>repos/how-to-optim-algorithm-in-cuda/cutlass/instructions/cuda的ldmatrix指令的详细解释.md</code>。
+</p>
+
+<p class="cite">
+<sup class="ref">[1]</sup> 术语见 <a href="../reference/glossary.html">术语表 → Tensor Core / MMA</a>。
+<sup class="ref">[2]</sup> 完整 thread-to-fragment 映射见 PTX ISA 表格；下一课会图解。
+</p>
+
+<div class="lesson-nav">
+  <span><a href="../reference/glossary.html">📖 术语表</a></span>
+  <span><a href="../MISSION.md">🎯 Mission</a></span>
+  <span>下一课：手写 mma.sync + ldmatrix（待生成）</span>
+</div>
+
+<script>
+document.querySelectorAll('.quiz').forEach(function(quiz){
+  var fb = quiz.querySelector('.fb');
+  var msgs = {
+    q1: '正确。mma.sync 是 warp（线程束，32 线程）协作的一条同步指令——这是它区别于 CUDA core 标量 FMA 的本质。',
+    q2: '正确。A/B/C/D 都以 fragment 形式分散在 32 个线程的寄存器里，没有线程持有完整一行。',
+    q3: '正确。ldmatrix 负责从 shared memory 装载并摆成 mma 钦定的 fragment 布局，衔接 SMEM 与 tensor core。',
+    q4: '正确。顺序是 D.A.B.C（输出在前，然后 A、B，累加 C 在最后）——读类型字段时按这个顺序对号入座。'
+  };
+  quiz.querySelectorAll('.opt').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var correct = btn.dataset.c === '1';
+      quiz.querySelectorAll('.opt').forEach(function(b){ b.disabled = true;
+        if(b.dataset.c === '1') b.classList.add('correct'); });
+      if(!correct) btn.classList.add('wrong');
+      fb.textContent = correct ? msgs[quiz.id]
+        : '再想想：' + msgs[quiz.id];
+      fb.classList.add('show');
+    });
+  });
+});
+</script>
+</body>
+</html>
