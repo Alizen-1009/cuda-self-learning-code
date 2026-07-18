@@ -38,7 +38,7 @@ Your table is directionally correct. The important refinements are:
 | `mma.sync` | Warp-level MMA PTX | Warp-synchronous PTX instruction, e.g. `mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32`. | Ada/Ampere-style Tensor Core ground truth; learn fragment layout here first. |
 | WMMA | Warp Matrix Multiply Accumulate | CUDA C++ API in `nvcuda::wmma` that wraps Tensor Core fragments and `mma_sync`. | Good teaching API; hides fragment layout and usually gives less control than inline PTX/CuTe. |
 | WGMMA | Warpgroup Matrix Multiply-Accumulate | Hopper warpgroup-level async MMA PTX, e.g. `wgmma.mma_async`. | Core Hopper/H20 GEMM path; pairs with TMA, mbarrier, and warp specialization. |
-| `tcgen05.mma` | Tensor Core generation 5 MMA | Blackwell SM100 PTX instruction family for fifth-generation Tensor Cores. | Core B200/SM100 GEMM path; tied to TMEM and newer FP8/FP4/block-scaled flows. |
+| `tcgen05.mma` | Tensor Core generation 5 MMA | Blackwell SM100 PTX instruction family for fifth-generation Tensor Cores. | Core B200 / B300 (SM100) GEMM path; tied to TMEM and newer FP8/FP4/block-scaled flows. |
 | TMMA | Tensor Memory MMA / informal Blackwell MMA shorthand | Informal shorthand people may use for Blackwell Tensor Core + TMEM MMA flows. | Prefer writing `tcgen05.mma` next to it to avoid ambiguity. |
 | UMMA | Unified MMA / informal library shorthand | Community/library shorthand often used around Blackwell's unified MMA path. | Do not treat as a standalone PTX opcode; pair with `tcgen05.mma` or CUTLASS SM100 MMA type names. |
 | HMMA | Half-precision MMA SASS family | SASS-level Tensor Core instruction naming often seen on Volta/Ampere/Ada disassembly. | Shows up in `nvdisasm`/`cuobjdump`; useful for confirming Tensor Core lowering. |
@@ -57,7 +57,7 @@ Your table is directionally correct. The important refinements are:
 | L1 / SMEM | L1 cache / Shared memory | On-chip memory near each SM; SMEM is explicitly managed. | Most Tensor Core GEMMs stage A/B tiles through SMEM. |
 | Register file | Per-thread register storage | Fastest ordinary programmable storage, but limited. | Register pressure affects occupancy and spilling. |
 | Local memory | Per-thread memory backed by global memory | Used for spills and large per-thread arrays that cannot stay in registers. | If `ncu` shows local memory traffic, inspect register pressure and indexing. |
-| TMEM | Tensor Memory | Blackwell on-chip memory used by Tensor Core/tcgen05 accumulator flows. | B200-specific mental model; separate from registers and SMEM. |
+| TMEM | Tensor Memory | Blackwell on-chip memory used by Tensor Core/tcgen05 accumulator flows. | B200 / B300-specific mental model; separate from registers and SMEM. |
 | DSMEM | Distributed Shared Memory | Cluster-level shared-memory addressing across CTAs in a cluster. | Relevant for cluster-level algorithms and some Hopper/Blackwell cooperative kernels. |
 | `cp.async` | Async copy global to shared | Ampere+ PTX copy path for staging GMEM to SMEM without a normal register round trip. | Foundation of multistage software pipelines before Hopper TMA. |
 | TMA | Tensor Memory Accelerator | Hardware tensor copy path using descriptors for multidimensional tile movement, usually GMEM <-> SMEM. | Hopper/Blackwell GEMM and attention often combine TMA, mbarrier, and WGMMA. |
@@ -110,7 +110,7 @@ Your table is directionally correct. The important refinements are:
 | BF16 / `.bf16` | bfloat16 | 16-bit float with FP32-like exponent width and fewer mantissa bits. | Common training/inference precision; not the same as `.f16`. |
 | TF32 / `.tf32` | TensorFloat-32 | 19-bit-ish Tensor Core format stored/operated through 32-bit paths. | Used for FP32-like GEMM acceleration on Ampere+. |
 | FP8 E4M3 / E5M2 | 8-bit floating point formats | FP8 variants with different exponent/mantissa tradeoffs. | Hopper/Blackwell inference and quantized GEMM. |
-| FP4 / MXFP4 | 4-bit floating point / microscaling FP4 | Blackwell low-precision path, often with block scaling. | Important for B200 MoE and next-gen quantized GEMM. |
+| FP4 / MXFP4 | 4-bit floating point / microscaling FP4 | Blackwell low-precision path, often with block scaling. | Important for B200 / B300 MoE and next-gen quantized GEMM. |
 | Block scaling | Per-block scale factors | Small groups of values share scale metadata. | Used to recover numeric range for FP8/FP4-style low precision. |
 | W4A16 / W8A8 | Weight/activation precision shorthand | Quantization shorthand, e.g. 4-bit weights with 16-bit activations. | Common in LLM inference GEMM discussions. |
 | Dequantization | Convert quantized values to compute format | Applies scale/zero-point or related metadata before/during compute. | Can live in mainloop, epilogue, or separate kernel. |

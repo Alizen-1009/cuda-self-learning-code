@@ -14,12 +14,12 @@
 - 通信层（NVSHMEM/all2all/DeepEP）明确排除出主线。
 
 ## 规划的学习路径（阶段）
-0. 性能心智模型 & 内存层次/roofline（补 Agent 常用词汇）→ 4060ti
-1. **Tensor Core 入门：`mma.sync` m16n8k16 + ldmatrix**（最大缺口，第一阶段起点）→ 4060ti
-2. GEMM 优化全景（tiling/cp.async/swizzle/pipelining）+ CuTe 入门 → 4060ti
+0. 性能心智模型 & 内存层次/roofline（补 Agent 常用词汇）→ H20
+1. **Tensor Core 入门：`mma.sync` m16n8k16 + ldmatrix**（最大缺口，第一阶段起点）→ H20
+2. GEMM 优化全景（tiling/cp.async/swizzle/pipelining）+ CuTe 入门 → H20
 3. Hopper：`wgmma` + TMA + warp specialization → H20
-4. Blackwell：`tcgen05`/TMMA + TMEM + FP4/FP8 → B200
-5. 毕业作品：MoE 计算侧（grouped/量化 GEMM）→ H20 + B200
+4. Blackwell：`tcgen05`/TMMA + TMEM + FP4/FP8 → B200 / B300
+5. 毕业作品：MoE 计算侧（grouped/量化 GEMM）→ H20 + B200 / B300
 - Triton 作为对照透镜穿插各阶段。
 
 ## Implications

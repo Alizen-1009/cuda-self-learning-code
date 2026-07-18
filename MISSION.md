@@ -12,7 +12,7 @@
 
 ## Constraints
 - 高强度投入：>15h/周，可排陡峭路径。
-- 硬件齐全：4060ti(Ada, 本地快速迭代) + H20(Hopper) + B200(Blackwell)。
+- 硬件齐全：H20(Hopper) + B200 / B300(Blackwell)，全部为数据中心真机开发环境。
 - 强算法背景（ACM 获奖）、多段推理框架实习——概念抽象与工程能力强，无需从编程基础讲起。
 - 起点：只写过 CUDA core 算子，**tensor core 零基础**，Hopper/Blackwell 特性不了解。
 

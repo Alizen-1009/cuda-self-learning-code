@@ -38,7 +38,7 @@
 | `mma.sync` | Warp-level MMA PTX | warp 级同步 PTX 指令，例如 `mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32`。 | Ada/Ampere 路线的 Tensor Core 地基；先在这里学 fragment 布局。 |
 | WMMA | Warp Matrix Multiply Accumulate | `nvcuda::wmma` 中的 CUDA C++ API，封装 Tensor Core fragment 和 `mma_sync`。 | 适合教学入门；隐藏 fragment 布局，控制力通常低于 inline PTX/CuTe。 |
 | WGMMA | Warpgroup Matrix Multiply-Accumulate | Hopper warpgroup 级异步 MMA PTX，例如 `wgmma.mma_async`。 | Hopper/H20 GEMM 核心路径；常和 TMA、mbarrier、warp specialization 搭配。 |
-| `tcgen05.mma` | Tensor Core generation 5 MMA | Blackwell SM100 第五代 Tensor Core PTX 指令族。 | B200/SM100 GEMM 核心路径；和 TMEM、FP8/FP4/block scaling 强相关。 |
+| `tcgen05.mma` | Tensor Core generation 5 MMA | Blackwell SM100 第五代 Tensor Core PTX 指令族。 | B200 / B300(SM100) GEMM 核心路径；和 TMEM、FP8/FP4/block scaling 强相关。 |
 | TMMA | Tensor Memory MMA / Blackwell MMA 非正式简称 | 社区可能用来指 Blackwell Tensor Core + TMEM MMA 路线的简称。 | 建议同时写 `tcgen05.mma`，避免歧义。 |
 | UMMA | Unified MMA / 库或社区简称 | 常见于社区/库中，描述 Blackwell 统一 MMA 路线的简称。 | 不要当成独立 PTX opcode；应和 `tcgen05.mma` 或 CUTLASS SM100 MMA 类型名一起使用。 |
 | HMMA | Half-precision MMA SASS family | SASS 层 Tensor Core 指令名，常见于 Volta/Ampere/Ada 反汇编。 | 在 `nvdisasm`、`cuobjdump` 中确认 Tensor Core lowering 时会看到。 |
@@ -57,7 +57,7 @@
 | L1 / SMEM | L1 cache / Shared memory | 靠近每个 SM 的片上内存；SMEM 由程序显式管理。 | 大多数 Tensor Core GEMM 会把 A/B tile stage 到 SMEM。 |
 | Register file | 寄存器文件 | 每线程寄存器存储，普通可编程存储里最快但有限。 | register pressure 会影响 occupancy 和 spill。 |
 | Local memory | 本地内存 | 每线程私有但实际由 global memory 支撑；常用于 spill 或过大的 per-thread 数组。 | 如果 `ncu` 看到 local memory traffic，要检查寄存器压力和索引方式。 |
-| TMEM | Tensor Memory | Blackwell 上用于 Tensor Core/tcgen05 累加器流的片上内存。 | B200 专属心智模型；与 register 和 SMEM 分开看。 |
+| TMEM | Tensor Memory | Blackwell 上用于 Tensor Core/tcgen05 累加器流的片上内存。 | B200 / B300 专属心智模型；与 register 和 SMEM 分开看。 |
 | DSMEM | Distributed Shared Memory | cluster 内跨 CTA shared memory 寻址能力。 | cluster 级算法、Hopper/Blackwell 协作 kernel 中会遇到。 |
 | `cp.async` | Async copy global to shared | Ampere+ 的 PTX 异步拷贝路径，把 GMEM stage 到 SMEM，避免普通寄存器中转。 | Hopper TMA 之前 multistage software pipeline 的基础。 |
 | TMA | Tensor Memory Accelerator | 使用 descriptor 的硬件 tensor copy 路径，通常在 GMEM 和 SMEM 间搬多维 tile。 | Hopper/Blackwell GEMM 和 attention 常把 TMA、mbarrier、WGMMA 组合使用。 |
@@ -110,7 +110,7 @@
 | BF16 / `.bf16` | bfloat16 | 16-bit float，exponent 宽度接近 FP32，mantissa 更少。 | 训练/推理常见精度；不要和 `.f16` 混用。 |
 | TF32 / `.tf32` | TensorFloat-32 | 类 FP32 的 Tensor Core 格式，通过 32-bit 路径存放/操作。 | Ampere+ 上加速 FP32 风格 GEMM。 |
 | FP8 E4M3 / E5M2 | 8-bit floating point formats | FP8 的两种常见变体，exponent/mantissa 权衡不同。 | Hopper/Blackwell 推理和量化 GEMM 中常见。 |
-| FP4 / MXFP4 | 4-bit floating point / microscaling FP4 | Blackwell 低精度路径，通常结合 block scaling。 | B200 MoE 和新一代量化 GEMM 重点。 |
+| FP4 / MXFP4 | 4-bit floating point / microscaling FP4 | Blackwell 低精度路径，通常结合 block scaling。 | B200 / B300 MoE 和新一代量化 GEMM 重点。 |
 | Block scaling | 分块 scale factor | 一小组值共享 scale metadata。 | 用于恢复 FP8/FP4 等低精度格式的动态范围。 |
 | W4A16 / W8A8 | 权重/激活精度 shorthand | 量化简写，例如 4-bit weights + 16-bit activations。 | LLM inference GEMM 讨论中常见。 |
 | Dequantization | 反量化 | 在计算前或计算中应用 scale/zero-point 等元数据，把量化值转成计算格式。 | 可在 mainloop、epilogue 或独立 kernel 中完成。 |
