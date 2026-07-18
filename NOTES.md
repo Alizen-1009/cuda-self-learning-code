@@ -2,7 +2,7 @@
 
 ## 学习者画像
 - 强算法背景（ACM 获奖），多段推理框架实习。抽象能力强，学得快，可跳过基础语法。
-- 只写过 CUDA core 算子；tensor core 零基础；Hopper/Blackwell 特性不熟。
+- 熟练 CUDA core 算子；已用 WMMA 在远程 GPU 实现并验证 tensor core 算子；正在进入裸 `mma.sync`/`ldmatrix` 层。Hopper/Blackwell 特性不熟。
 - 高强度投入 >15h/周。
 
 ## 教学偏好 / 原则

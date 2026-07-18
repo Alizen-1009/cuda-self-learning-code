@@ -27,6 +27,15 @@
 
 <h2>一、Tensor Core 指令</h2>
 <dl class="glossary">
+  <dt id="fragment">Fragment（寄存器片段）</dt>
+  <dd>一个逻辑矩阵 tile 按硬件规定分散到 warp 各 lane 寄存器后的局部份额。它不是连续内存，也通常不是完整一行/列；审查 MMA 代码时必须区分“逻辑矩阵坐标”和“本 lane 的寄存器编号”。<span class="cite">[PTX ISA: Matrix Fragments]</span></dd>
+
+  <dt id="ldmatrix"><code>ldmatrix</code></dt>
+  <dd>warp 集体从 shared memory 装入一个或多个小矩阵 fragment 的 PTX 指令。<code>.x1/.x2/.x4</code> 分别需要 8/16/32 个行首地址；<code>.trans</code> 改变装入寄存器的片段组织以匹配转置布局。<span class="cite">[PTX ISA: ldmatrix]</span></dd>
+
+  <dt id="address-provider">Address Provider（行地址提供者）</dt>
+  <dd>在 <code>ldmatrix</code> 中，其地址操作数实际被用于指定矩阵行首的 lane。整 warp 都执行指令，但不代表每个 lane 的地址都被消费；必须按 <code>.x1/.x2/.x4</code> 区分。</dd>
+
   <dt>Tensor Core</dt>
   <dd>SM 内专用硬件单元，一条指令完成小矩阵的乘累加 <code>D = A·B + C</code>。关键点：它是 <strong>warp（乃至 warpgroup）协作</strong>的，不是单线程指令——操作数分布在多个线程的寄存器里。<span class="cite">[NVIDIA CUDA C++ Guide]</span></dd>
 
@@ -35,9 +44,6 @@
 
   <dt>WMMA (<span class="ptx">nvcuda::wmma</span>)</dt>
   <dd>CUDA C++ 层对 mma 的高级封装（16×16×16），用起来简单但控制力弱、性能上限低于手写 <code>mma.sync</code>。多用于教学与入门。</dd>
-
-  <dt><span class="ptx">ldmatrix</span></dt>
-  <dd>PTX 指令，warp 协作地把一小块矩阵从 shared memory 搬进寄存器，并直接摆成 <code>mma</code> 期望的 fragment 布局。是连接 SMEM 与 tensor core 的关键桥梁。<span class="cite">[cutlass/instructions 笔记]</span></dd>
 
   <dt>WGMMA / <span class="ptx">wgmma.mma_async</span> <span class="tag hopper">HOPPER</span></dt>
   <dd>Warpgroup 级<strong>异步</strong> MMA。由一个 warpgroup（4 warps = 128 线程）发起，操作数可直接来自 shared memory，累加器在寄存器中；配合 fence/mbarrier 实现计算与访存重叠。Hopper 高性能 GEMM 的核心。<span class="cite">[cutlass/wgmma 笔记 · Colfax]</span></dd>

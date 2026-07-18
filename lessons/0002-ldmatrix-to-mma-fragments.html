@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 2 课 · 从 ldmatrix 到 mma.sync fragment</title>
+<link rel="stylesheet" href="../assets/style.css">
+<style>
+  .pipeline { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; margin: 1.2rem 0; }
+  .pipeline div { border-top: 3px solid var(--accent-2); background: var(--code-bg); padding: .65rem; font-size: .82rem; }
+  .pipeline b { display: block; font-family: var(--font-mono); margin-bottom: .25rem; }
+  .formula td:first-child { width: 7rem; font-family: var(--font-mono); color: var(--accent); }
+  .code-map td:first-child { font-family: var(--font-mono); white-space: nowrap; }
+  .task-list li { margin: .55rem 0; }
+  @media (max-width: 700px) { .pipeline { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+
+<p class="eyebrow">Lesson 02 · Tensor Core 入门 <span class="tag ada">4060ti 可跑</span></p>
+<h1>从 <code>ldmatrix</code> 到 <code>mma.sync</code> fragment</h1>
+<p class="subtitle">拆掉 WMMA：给定任意 lane，手算它加载、计算、写回哪些矩阵元素。</p>
+
+<div class="note">
+  <span class="callout-title">这节课的唯一目标 (tangible win)</span>
+  完成后，你能审查一段裸 PTX MMA kernel：从 shared-memory 地址公式出发，验证 <code>ldmatrix.x4</code>/<code>x2.trans</code> 是否把 A/B 放进 <code>mma.sync.m16n8k16</code> 要求的寄存器 fragment，并反推出每个 lane 应写回的 C/D 坐标。
+</div>
+
+<p>你已经用 WMMA 完成了真机验证。WMMA 替你隐藏了下面整条链路；今天只做一件事：把这条链路逐段接起来。</p>
+
+<div class="pipeline" aria-label="MMA 数据路径">
+  <div><b>shared memory</b>二维 A/B tile</div>
+  <div><b>lane address</b>部分线程提供行首地址</div>
+  <div><b>ldmatrix</b>集体搬到分散寄存器</div>
+  <div><b>mma.sync</b>按固定 fragment 解释寄存器</div>
+</div>
+
+<h2>1. 先固定我们要喂的指令</h2>
+<pre><code>mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32
+    {d0,d1,d2,d3}, {a0,a1,a2,a3}, {b0,b1}, {c0,c1,c2,c3};</code></pre>
+<p>A 是 <code>16×16</code> row-major，B 是 <code>16×8</code> col-major，C/D 是 <code>16×8</code>。每线程持有 A 的 8 个 half、B 的 4 个 half、C/D 的 4 个 float。注意 PTX 中的 <code>a0..a3</code> 是四个 32-bit 寄存器；官方 fragment 公式中的元素编号 <code>a0..a7</code> 是每个寄存器内低到高的八个 half，二者不要混名。<sup class="ref">[1]</sup></p>
+
+<h2>2. 一组公式解释全部 lane</h2>
+<p>令 <code>g = lane_id >> 2</code>，<code>t = lane_id &amp; 3</code>。32 个 lane 被看成 8 组，每组 4 个线程：<code>g</code> 选行/列组，<code>t</code> 选组内相邻的两个元素。</p>
+
+<table class="formula">
+  <tr><th>fragment</th><th>本 lane 持有的矩阵坐标</th></tr>
+  <tr><td>A</td><td>行是 <code>g</code> 与 <code>g+8</code>；列是 <code>2t, 2t+1, 2t+8, 2t+9</code>。两行 × 四列，共 8 个 half。</td></tr>
+  <tr><td>B</td><td>列固定为 <code>g</code>；行是 <code>2t, 2t+1, 2t+8, 2t+9</code>。四行 × 一列，共 4 个 half。</td></tr>
+  <tr><td>C/D</td><td>行是 <code>g</code> 与 <code>g+8</code>；列是 <code>2t, 2t+1</code>。两行 × 两列，共 4 个 float。</td></tr>
+</table>
+
+<div class="fragment-explorer" data-fragment-explorer>
+  <div class="fragment-controls">
+    <label for="lane-slider">拖动 lane，先预测再看高亮：</label>
+    <input id="lane-slider" data-lane-slider type="range" min="0" max="31" value="0">
+    <output class="lane-badge" data-lane-badge>lane 0</output>
+  </div>
+  <pre class="fragment-summary" data-fragment-summary aria-live="polite"></pre>
+  <div class="fragment-panels">
+    <section class="fragment-panel"><h3>A · 16×16</h3><div class="matrix-grid" data-matrix="a"></div><p class="fragment-caption">8 个 half → <code>RA0..RA3</code></p></section>
+    <section class="fragment-panel"><h3>B · 16×8</h3><div class="matrix-grid" data-matrix="b"></div><p class="fragment-caption">4 个 half → <code>RB0..RB1</code></p></section>
+    <section class="fragment-panel"><h3>C/D · 16×8</h3><div class="matrix-grid" data-matrix="c"></div><p class="fragment-caption">4 个 float → 四个独立的 <code>RC0..RC3</code></p></section>
+  </div>
+</div>
+
+<div class="win">
+  <span class="callout-title">先验算 lane 13</span>
+  <code>g=3, t=1</code>。所以 C/D 必须是行 <code>{3,11}</code>、列 <code>{2,3}</code> 的四个元素。以后看到写回公式，先用一个非边界 lane 做这种心算，最容易抓出转置和 <code>+8</code> 错位。
+</div>
+
+<h2>3. <code>ldmatrix</code> 为什么刚好对上</h2>
+<p><code>ldmatrix.sync.aligned.m8n8.xN.shared.b16</code> 把一个或多个 8×8、16-bit 矩阵从 shared memory 集体装入 warp 寄存器。每个 8×8 矩阵需要 8 个行首地址；<code>x4</code> 时 lane <code>0–7</code>、<code>8–15</code>、<code>16–23</code>、<code>24–31</code> 分别提供四个矩阵的地址。每四个 lane 共同接收一行，每 lane 得到相邻两个 half，正好一个 32-bit 寄存器。<sup class="ref">[2]</sup></p>
+
+<pre><code><span class="cmt">// A: 把 16×16 切成四个 8×8 象限</span>
+uint32_t a_addr = __cvta_generic_to_shared(
+    &amp;s_a[lane % 16][(lane / 16) * 8]);
+ldmatrix.sync.aligned.m8n8.x4.shared.b16
+    {RA0, RA1, RA2, RA3}, [a_addr];
+
+<span class="cmt">// B: 把 16×8 切成上下两个 8×8；trans 生成 col-major fragment</span>
+uint32_t b_addr = __cvta_generic_to_shared(&amp;s_b[lane % 16][0]);
+ldmatrix.sync.aligned.m8n8.x2.trans.shared.b16
+    {RB0, RB1}, [b_addr];</code></pre>
+
+<table class="code-map">
+  <tr><th>寄存器</th><th>A 中对应的 8×8 象限 / B 中对应的行段</th></tr>
+  <tr><td>RA0</td><td>A[0:8, 0:8]：上左</td></tr>
+  <tr><td>RA1</td><td>A[8:16, 0:8]：下左</td></tr>
+  <tr><td>RA2</td><td>A[0:8, 8:16]：上右</td></tr>
+  <tr><td>RA3</td><td>A[8:16, 8:16]：下右</td></tr>
+  <tr><td>RB0 / RB1</td><td>B[0:8, :] / B[8:16, :]；<code>.trans</code> 让输出寄存器匹配 B 的 col-major fragment。</td></tr>
+</table>
+
+<div class="warn">
+  <span class="callout-title">最常见的 Agent 幻觉</span>
+  “所有 32 个 lane 都各自提供一个有效地址”并不精确。地址提供者取决于 <code>.x1/.x2/.x4</code>：分别只需要 8/16/32 个行地址；但整条指令仍要求整个 warp 一致执行。不要把“参与执行”与“地址被消费”混为一谈。
+</div>
+
+<h2>4. 从 accumulator 公式直接写回</h2>
+<pre><code>int row0 = block_m + lane / 4;
+int row1 = row0 + 8;
+int col  = block_n + (lane % 4) * 2;
+
+<span class="cmt">// 每个 RC 寄存器打包横向相邻的两个 half 时：</span>
+store32(&amp;C[row0][col], RC0);
+store32(&amp;C[row1][col], RC1);</code></pre>
+<p>如果累加器是 f32，则每 lane 有四个独立寄存器，坐标顺序是 <code>(row0,col)</code>、<code>(row0,col+1)</code>、<code>(row1,col)</code>、<code>(row1,col+1)</code>。这就是你审查 epilogue 的锚点：<strong>先从官方 C/D fragment 反推 store，不要从“希望输出长什么样”正向猜。</strong></p>
+
+<h2>5. 真实代码审查练习（15–25 分钟）</h2>
+<p>打开仓库中的 <a href="../repos/LeetCUDA/kernels/swizzle/mma_simple_swizzle.cu"><code>mma_simple_swizzle.cu</code></a>，只审查一次 K tile，不需要重写 kernel。</p>
+<ol class="task-list">
+  <li>在纸上写出 lane <code>0</code>、<code>13</code>、<code>31</code> 的 A/B/C 坐标；再用上面的探针核对。</li>
+  <li>解释 A 的地址公式为什么产生“上左、下左、上右、下右”四个 8×8 矩阵。</li>
+  <li>暂时忽略 swizzle，把 <code>swizzle_j(...)</code> 当恒等映射；确认 <code>LDMATRIX_X4</code> 与 <code>LDMATRIX_X2_T</code> 的输出顺序匹配 HMMA 参数。</li>
+  <li>找到 C 写回公式，用 C/D fragment 公式证明它正确；再指出它为何只适用于代码当前的 f16 accumulator 版本。</li>
+  <li>加分：指出该样例中一个与 fragment 无关、但会影响通用正确性的边界处理问题。不要先问 Agent。</li>
+</ol>
+
+<div class="quiz" data-answer="1">
+  <p class="q">即时回忆 1：lane 13 的 <code>RC</code> 覆盖哪四个 C/D 元素？</p>
+  <div class="opts">
+    <button class="opt">行 3/11，列 1/2</button>
+    <button class="opt">行 3/11，列 2/3</button>
+    <button class="opt">行 5/13，列 2/3</button>
+    <button class="opt">行 5/13，列 1/2</button>
+  </div>
+  <div class="fb">lane 13 → <code>g=3</code>、<code>t=1</code>，所以行是 3/11，列是 2/3。</div>
+</div>
+
+<div class="quiz" data-answer="2">
+  <p class="q">即时回忆 2：B 使用 <code>ldmatrix.x2.trans</code> 的核心原因是什么？</p>
+  <div class="opts">
+    <button class="opt">减少 shared 行地址数量</button>
+    <button class="opt">避免所有 shared bank conflict</button>
+    <button class="opt">生成 mma 所需列布局</button>
+    <button class="opt">扩大单条 mma 的 K</button>
+  </div>
+  <div class="fb"><code>.trans</code> 改变装入寄存器的片段组织，使 shared-memory 行数据匹配 B 的 col-major MMA fragment；它不保证自动消除所有 bank conflict。</div>
+</div>
+
+<div class="note">
+  <span class="callout-title">主源（建议本课后立即对照）</span>
+  NVIDIA PTX ISA：<a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#matrix-fragments-for-mma-m16n8k16-with-floating-point-type">m16n8k16 floating-point fragment</a> 与 <a href="https://docs.nvidia.com/cuda/parallel-thread-execution/#warp-level-matrix-instructions-ldmatrix"><code>ldmatrix</code></a>。本课所有 lane 公式与地址提供者规则均以这两节为准。<sup class="ref">[1][2]</sup>
+</div>
+
+<div class="ask-teacher">
+  <span class="callout-title">随时追问</span>
+  做完练习后，把你对 lane 13 的推导或你找到的边界问题发给我。我会只检查推理链，不直接用“对/错”替代解释。
+</div>
+
+<p class="cite">[1] NVIDIA PTX ISA, “Matrix Fragments for mma.m16n8k16 with floating point type.”　[2] NVIDIA PTX ISA, “Warp-level matrix load instruction: ldmatrix.”</p>
+
+<div class="lesson-nav">
+  <span><a href="0001-cuda-core-to-tensor-core.html">← 第 1 课</a></span>
+  <span><a href="../reference/glossary.html">术语表</a></span>
+</div>
+
+<script src="../assets/quiz.js"></script>
+<script src="../assets/fragment-explorer.js"></script>
+</body>
+</html>
