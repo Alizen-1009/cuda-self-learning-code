@@ -60,8 +60,23 @@
   <dt>内存层次</dt>
   <dd>Global (HBM) → L2 → Shared Memory (SMEM) / L1 → Register；Blackwell 另加 <strong>TMEM</strong>（tensor core 专用）。越靠近计算单元越快越小。优化的本质就是把数据尽量留在高层次、复用最大化。</dd>
 
+  <dt id="shared-memory-limits">Shared Memory 资源上限</dt>
+  <dd><code>sharedMemPerBlock</code> 是单 block 的默认上限，<code>sharedMemPerBlockOptin</code> 是显式 opt-in 后的单 block 上限，<code>sharedMemPerMultiprocessor</code> 是一个 SM 上所有驻留 block 共同竞争的总预算。它们共同约束 occupancy。详见 <a href="cuda-device-properties.html">CUDA Device Properties 速查</a>。</dd>
+
+  <dt id="persisting-l2">Persisting L2 Cache</dt>
+  <dd>从设备 L2 中预留一部分容量，给标为 <code>cudaAccessPropertyPersisting</code> 的访问更高保留优先级。它不是锁定或预加载；最大可预留量由 <code>persistingL2CacheMaxSize</code> 给出。<span class="cite">[CUDA C++ Guide: L2 Access Management]</span></dd>
+
+  <dt id="access-policy-window">Access Policy Window</dt>
+  <dd>附着在 CUDA stream 或 graph kernel node 上的连续地址区间，用 <code>hitProp</code>、<code>missProp</code> 和 <code>hitRatio</code> 提示 L2 缓存策略。窗口大小上限是 <code>accessPolicyMaxWindowSize</code>；它描述可标注的地址范围，不是缓存容量。</dd>
+
   <dt><span class="ptx">cp.async</span> (LDGSTS) <span class="tag ada">AMPERE+</span></dt>
   <dd>异步拷贝 global→shared，绕过寄存器，让搬运与计算重叠。是 software pipelining 的基础。</dd>
+
+  <dt id="copy-engine">Copy Engine / DMA Engine</dt>
+  <dd>独立于 SM 计算流水线执行数据搬运的硬件引擎；<code>asyncEngineCount</code> 报告其数量。配合 pinned host memory、<code>cudaMemcpyAsync</code> 与可并发 stream，拷贝才可能和 kernel 计算重叠。</dd>
+
+  <dt id="mapped-host-memory">Pinned / Mapped Host Memory</dt>
+  <dd><strong>Pinned</strong> 表示 host 页被锁定，可供 DMA 高效搬运；<strong>mapped</strong> 在此基础上把 host memory 映射进 GPU 地址空间，让 kernel 可以直接 load/store。离散 GPU 上的 mapped 访问通常仍需经过 PCIe/NVLink。</dd>
 
   <dt>TMA — Tensor Memory Accelerator <span class="tag hopper">HOPPER</span></dt>
   <dd>专用硬件 DMA 引擎，用多维 tensor descriptor 一条指令（<code>cp.async.bulk.tensor</code>）搬运整块 tile，完成信号写入 mbarrier。大幅降低地址计算与线程开销。<span class="cite">[cutlass/tma 笔记 · Colfax]</span></dd>
@@ -96,6 +111,9 @@
 
 <h2>四、性能与调度</h2>
 <dl class="glossary">
+  <dt id="concurrent-kernels">Concurrent Kernels</dt>
+  <dd>设备同时执行来自不同 stream 的多个 kernel 的能力。<code>concurrentKernels = true</code> 只表示硬件支持；无依赖且仍有 SM、寄存器与共享内存资源时才会真正重叠。</dd>
+
   <dt>Warp specialization <span class="tag hopper">HOPPER+</span></dt>
   <dd>把一个 block 的 warp 分成<strong>生产者</strong>（用 TMA 搬数据）和<strong>消费者</strong>（用 wgmma 算），通过 mbarrier 流水衔接。Hopper/Blackwell 高性能 GEMM 的标准结构。</dd>
 

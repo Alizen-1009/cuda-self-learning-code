@@ -16,7 +16,8 @@ self-learing/
 ├── learning-records/         # 学习记录（像 ADR，决定下一步教什么）
 │   └── 0001-initial-assessment-and-path.md
 ├── reference/                # 📖 参考文档（常读常新的精华）
-│   └── glossary.html         # 术语表（每课都遵循）
+│   ├── glossary.html         # 术语表（每课都遵循）
+│   └── cuda-device-properties.html  # cudaDeviceProp 资源/能力边界速查
 ├── lessons/                  # 🎓 一节节的课（教学主体）
 │   └── 0001-cuda-core-to-tensor-core.html
 ├── assets/                   # 各课共享组件

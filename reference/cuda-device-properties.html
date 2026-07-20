@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CUDA Device Properties 核心字段速查</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<p class="eyebrow">Reference · CUDA 资源与能力边界</p>
+<h1><code>cudaDeviceProp</code> 核心字段速查</h1>
+<p class="subtitle">把设备属性翻译成 kernel 设计约束，而不是把数字误当成实际性能。</p>
+
+<div class="note">
+  <span class="callout-title">这份速查表解决什么</span>
+  来源代码是
+  <a href="../repos/Cuda-Tutorials/0000-dev-info.cu"><code>repos/Cuda-Tutorials/0000-dev-info.cu</code></a>。
+  这里不重复全部输出，而是压缩最影响 kernel 判断的字段，并标出源码中容易误读的地方。
+</div>
+
+<h2>先记住：属性上限 ≠ 运行结果</h2>
+
+<table>
+  <tr><th>设备属性告诉你</th><th>设备属性不告诉你</th></tr>
+  <tr>
+    <td>架构能力、单 block 上限、单 SM 资源预算、硬件是否支持某机制</td>
+    <td>某个 kernel 的实际 occupancy、带宽、并发程度或 Tensor Core 利用率</td>
+  </tr>
+  <tr>
+    <td><code>major.minor</code> 对应的 Compute Capability</td>
+    <td>程序实际编译出了哪些 PTX/SASS 指令，以及运行时是否走到目标路径</td>
+  </tr>
+</table>
+
+<p>
+实际 kernel 还受编译目标、每线程寄存器、每 block 共享内存、launch 参数、stream 依赖和数据访问模式共同约束。
+</p>
+
+<h2>1. 执行与 launch 上限</h2>
+
+<table>
+  <tr><th>字段</th><th>准确含义</th><th>审查 kernel 时怎么用</th></tr>
+  <tr>
+    <td><code>major</code> / <code>minor</code></td>
+    <td>Compute Capability，例如 <code>9.0</code> 对应 Hopper <code>sm_90</code></td>
+    <td>判断某条 PTX 指令或 CUDA 特性是否存在；仍需核对编译目标</td>
+  </tr>
+  <tr>
+    <td><code>multiProcessorCount</code></td>
+    <td>设备的 SM 数量</td>
+    <td>估算并行 tile 数；它本身不能推出峰值吞吐</td>
+  </tr>
+  <tr>
+    <td><code>maxThreadsPerBlock</code></td>
+    <td>一个 block 允许的线程总数上限</td>
+    <td><code>blockDim.x × blockDim.y × blockDim.z</code> 不得超过它</td>
+  </tr>
+  <tr>
+    <td><code>maxThreadsPerMultiProcessor</code></td>
+    <td>一个 SM 可同时驻留的线程数硬上限</td>
+    <td>只是 occupancy 的一个上界；寄存器和 SMEM 常常先卡住</td>
+  </tr>
+  <tr>
+    <td><code>warpSize</code></td>
+    <td>warp 的线程数，当前 NVIDIA CUDA GPU 为 32</td>
+    <td>warp 级归约、<code>ldmatrix</code>、<code>mma.sync</code> 的协作粒度</td>
+  </tr>
+</table>
+
+<h2>2. Shared Memory：单 block 申请量与单 SM 总预算</h2>
+
+<table>
+  <tr><th>字段</th><th>含义</th></tr>
+  <tr>
+    <td><code>sharedMemPerBlock</code></td>
+    <td>单 block 在不显式 opt-in 时可用的共享内存上限</td>
+  </tr>
+  <tr>
+    <td><code>sharedMemPerBlockOptin</code></td>
+    <td>显式 opt-in 后单 block 可用的更高上限；不是额外相加的一块内存</td>
+  </tr>
+  <tr>
+    <td><code>sharedMemPerMultiprocessor</code></td>
+    <td>一个 SM 上所有驻留 block 共同竞争的共享内存总预算</td>
+  </tr>
+</table>
+
+<pre><code>shared_per_block ≈ static_shared + dynamic_shared
+
+shared 限制给出的驻留 block 上界
+    = floor(sharedMemPerMultiprocessor / shared_per_block)
+
+真实驻留数
+    = min(shared 上界, register 上界, thread 上界, block 硬上限)</code></pre>
+
+<p>超过默认单 block 上限时，动态共享内存需要显式 opt-in：</p>
+
+<pre><code>cudaFuncSetAttribute(
+    kernel,
+    cudaFuncAttributeMaxDynamicSharedMemorySize,
+    requested_dynamic_bytes);
+
+kernel&lt;&lt;&lt;grid, block, requested_dynamic_bytes, stream&gt;&gt;&gt;();</code></pre>
+
+<div class="win">
+  <span class="callout-title">Tensor Core 审查点</span>
+  Agent 增加 GEMM pipeline stage 时，A/B tile 的 SMEM 占用会增加。
+  先算每 block 用量，再看它是否把每 SM 的驻留 block 数从 2 降到了 1；
+  多一级预取不一定抵得过并行度下降。
+</div>
+
+<h2>3. L2：容量、持久化预留与访问策略窗口</h2>
+
+<table>
+  <tr><th>字段</th><th>含义</th><th>不是</th></tr>
+  <tr>
+    <td><code>l2CacheSize</code></td>
+    <td>设备总 L2 容量</td>
+    <td>不是某个 kernel 独占的容量</td>
+  </tr>
+  <tr>
+    <td><code>persistingL2CacheMaxSize</code></td>
+    <td>最多能从 L2 中预留多少容量，优先保留 persisting 访问的数据</td>
+    <td>不是当前已经预留的容量，也不保证 cache line 永不淘汰</td>
+  </tr>
+  <tr>
+    <td><code>accessPolicyMaxWindowSize</code></td>
+    <td>一次访问策略窗口能够覆盖的最大连续地址范围</td>
+    <td>不是新增缓存容量，也不要求整个窗口同时驻留 L2</td>
+  </tr>
+</table>
+
+<pre><code>物理 L2 总容量
+├── 普通缓存用途
+└── 可预留的 persisting 区域
+    预留值 ≤ persistingL2CacheMaxSize
+
+显存区间 [base_ptr, base_ptr + num_bytes)
+                      └── num_bytes ≤ accessPolicyMaxWindowSize
+                          只是在访问时应用 cache policy</code></pre>
+
+<p>典型配置分两步：先预留容量，再给某个 stream 的地址窗口设置策略。</p>
+
+<pre><code>cudaDeviceSetLimit(cudaLimitPersistingL2CacheSize, reserve_bytes);
+
+cudaStreamAttrValue attr{};
+attr.accessPolicyWindow.base_ptr  = hot_data;
+attr.accessPolicyWindow.num_bytes = window_bytes;
+attr.accessPolicyWindow.hitRatio  = hit_ratio;
+attr.accessPolicyWindow.hitProp   = cudaAccessPropertyPersisting;
+attr.accessPolicyWindow.missProp  = cudaAccessPropertyStreaming;
+
+cudaStreamSetAttribute(
+    stream,
+    cudaStreamAttributeAccessPolicyWindow,
+    &amp;attr);</code></pre>
+
+<p>
+若窗口为 4 MiB、实际预留 3 MiB，可先尝试 <code>hitRatio = 3.0 / 4.0</code>，
+使获得 persisting 属性的数据比例与预算匹配。<code>hitRatio</code> 不是测得的 L2 命中率，
+而是决定多大比例访问采用 <code>hitProp</code> 的提示。
+</p>
+
+<div class="warn">
+  <span class="callout-title">持久化不是预加载或锁定</span>
+  设置窗口不会把数据立即搬进 L2。数据仍需被 kernel 访问后才会进入缓存，
+  persisting 只是提高其保留优先级。多个 stream 的 persistent 工作集还会竞争同一份设备级预算。
+</div>
+
+<h2>4. Kernel 并发、DMA 与 mapped host memory</h2>
+
+<table>
+  <tr><th>字段</th><th>含义</th><th>成立条件 / 常见误读</th></tr>
+  <tr>
+    <td><code>concurrentKernels</code></td>
+    <td>设备支持多个 kernel 同时执行</td>
+    <td>不同 stream 只是必要条件之一；无依赖且仍有 SM 资源时才可能真正重叠</td>
+  </tr>
+  <tr>
+    <td><code>asyncEngineCount</code></td>
+    <td>异步 Copy Engine / DMA 引擎数量</td>
+    <td>这是数量，不应只打印成布尔值；也不能跨架构硬套“1 单向、2 双向”</td>
+  </tr>
+  <tr>
+    <td><code>canMapHostMemory</code></td>
+    <td>GPU 能直接寻址 mapped pinned host memory</td>
+    <td>不是所有 pinned 内存都会自动 mapped；离散 GPU 上直接访问通常经过 PCIe/NVLink</td>
+  </tr>
+  <tr>
+    <td><code>unifiedAddressing</code></td>
+    <td>CPU/GPU 使用统一虚拟地址空间（UVA）</td>
+    <td>不等于 Unified Memory，也不自动提供迁移或一致性</td>
+  </tr>
+</table>
+
+<pre><code>pinned + cudaMemcpyAsync:
+CPU pinned memory ── Copy Engine ──▶ device memory ──▶ kernel
+                         可与 SM 计算重叠
+
+mapped pinned / zero-copy:
+CPU pinned memory ◀──── PCIe / NVLink ──── GPU kernel 直接 load/store
+                         无显式 memcpy，但不是“免费显存”</code></pre>
+
+<p>要让异步拷贝与计算真正重叠，通常同时需要：</p>
+
+<ol>
+  <li>page-locked（pinned）host memory；</li>
+  <li><code>cudaMemcpyAsync</code>；</li>
+  <li>可并发的不同 stream，且没有依赖；</li>
+  <li>设备具备对应 Copy Engine。</li>
+</ol>
+
+<h2>5. 纠正“一一对应”的硬件映射</h2>
+
+<table>
+  <tr><th>源码中的简化说法</th><th>更准确的说法</th></tr>
+  <tr>
+    <td>Grid ↔ 整个 GPU</td>
+    <td>Grid 是一次 kernel launch 的全部 block；block 被动态分批调度到 SM</td>
+  </tr>
+  <tr>
+    <td>Cluster ↔ 单个 GPC</td>
+    <td>一个 cluster 的 blocks 保证被协同调度在同一 GPC 内，但两者不是一一对应</td>
+  </tr>
+  <tr>
+    <td>Block ↔ 单个 SM</td>
+    <td>block 驻留期间位于一个 SM；同一 SM 通常可以同时驻留多个 block</td>
+  </tr>
+  <tr>
+    <td>Thread ↔ 单个 CUDA Core</td>
+    <td>thread 是逻辑执行上下文，不会永久绑定某个 CUDA Core；warp 指令被发往不同执行流水线</td>
+  </tr>
+</table>
+
+<h2>审查 Agent 输出时的五问</h2>
+
+<ol>
+  <li>这个值是硬件上限、当前配置，还是实测结果？</li>
+  <li>单 block 的寄存器与 SMEM 用量允许每 SM 驻留几个 block？</li>
+  <li>“支持并发”是否真的满足 stream、依赖和资源条件？</li>
+  <li>persistent L2 的工作集是否超过预留预算而发生 thrashing？</li>
+  <li>逻辑 thread/block 是否被错误描述成与物理单元一一绑定？</li>
+</ol>
+
+<h3>主源</h3>
+<p>
+  <a href="https://docs.nvidia.com/cuda/cuda-runtime-api/structcudaDeviceProp.html">CUDA Runtime API — <code>cudaDeviceProp</code></a><br>
+  <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#device-memory-l2-access-management">CUDA C++ Programming Guide — L2 Access Management</a><br>
+  <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#asynchronous-concurrent-execution">CUDA C++ Programming Guide — Asynchronous Concurrent Execution</a><br>
+  <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#page-locked-host-memory">CUDA C++ Programming Guide — Page-Locked Host Memory</a>
+</p>
+
+<p class="cite">
+本地延伸：
+<a href="../repos/how-to-optim-algorithm-in-cuda/cuda-mode/lei-mao-blogs/%E3%80%90%E5%8D%9A%E5%AE%A2%E8%BD%AC%E8%BD%BD%E3%80%91CUDA%20L2%20Persistent%20Cache.md">CUDA L2 Persistent Cache</a> ·
+<a href="../repos/how-to-optim-algorithm-in-cuda/cuda-mode/lei-mao-blogs/%E3%80%90%E5%8D%9A%E5%AE%A2%E8%BD%AC%E8%BD%BD%E3%80%91CUDA%20Zero%20Copy%20Mapped%20Memory.md">CUDA Zero Copy Mapped Memory</a>
+</p>
+
+<div class="ask-teacher">
+  <span class="callout-title">随时追问</span>
+  把 H20、B200 或 B300 的实际输出贴给我，我可以把这些上限进一步换算成具体的
+  occupancy、SMEM stage 数与可并发 tile 数。
+</div>
+
+<div class="lesson-nav">
+  <span><a href="glossary.html">术语表</a></span>
+  <span><a href="../repos/Cuda-Tutorials/0000-dev-info.cu">原始源码</a></span>
+  <span><a href="../MISSION.md">Mission</a></span>
+</div>
+
+</body>
+</html>
