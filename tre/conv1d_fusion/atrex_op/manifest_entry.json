@@ -1,0 +1,10 @@
+    "_causal_conv1d_fwd_kernel": {
+        "srcs": [
+            "f'{src_dir}/cuda/causal_conv1d_fwd/causal_conv1d_fwd.cu'",
+            "f'{src_dir}/cuda/causal_conv1d_fwd/causal_conv1d_fwd_pybind.cu'"
+        ],
+        "flags_extra_cc": [],
+        "flags_extra_hip": ["'--use_fast_math'", "f'-gencode=arch=compute_100a,code=sm_100a'"],
+        "extra_include": ["f'{src_dir}/cuda/causal_conv1d_fwd/include'"],
+        "verbose": "False"
+    },
